@@ -1,12 +1,9 @@
 ﻿#include "W25QXX.h"
-
-#include  "Interface.h"
-
 static void W25QCSXX_Write_Enable(W25QCS_BASE * base);  
 static void W25QCSXX_Write_Disable(W25QCS_BASE * base); 
-static void W25QCSXX_Write_NoCheck(W25QCS_BASE * base,uint8_t* pBuffer,uint32_t WriteAddr,uint16_t NumByteToWrite);  
+
 static uint32_t W25QCSXX_Wait_Busy(W25QCS_BASE * base,uint32_t ms); 
-static uint32_t W25QCSXX_Write_Page(W25QCS_BASE * base,uint8_t* pBuffer,uint32_t WriteAddr,uint16_t NumByteToWrite);
+static uint32_t W25QCSXX_Write_Page(W25QCS_BASE * base,uint32_t WriteAddr,uint8_t* pBuffer,uint16_t NumByteToWrite);
 static uint8_t W25QCSXX_ReadSR123(W25QCS_BASE * base,uint8_t sr);
 /***************************内部命令**************/
 enum W25QCOMMAND {
@@ -32,7 +29,7 @@ enum W25QCOMMAND {
 	W25X_BlockSectorLock	= 0x36 
 };
 
-uint8_t W25QCSXX_ReadSR123(W25QCS_BASE * base,uint8_t sr)   {  
+uint8_t W25QCSXX_ReadSR123(W25QCS_BASE * base,uint8_t sr)   {
 	uint8_t byte=0;
 	if((3>=sr)&&(sr>=1)){
 		base->W25QCS_CS_H();
@@ -70,33 +67,41 @@ static void W25QCSXX_Write_Disable(W25QCS_BASE * base)   {
     base->W25QCS_SPI_RW(W25X_WriteDisable);     
 	base->W25QCS_CS_H();                                  
 } 		
-uint16_t W25QCSXX_ReadID(W25QCS_BASE * base)
-{
-	uint16_t Temp = 0;	  
-	base->W25QCS_CS_L_enable();	
-	for(Temp = 0;Temp<1000;Temp++){}		
-	base->W25QCS_SPI_RW(0x90);   
-	base->W25QCS_SPI_RW(0x00); 	    
-	base->W25QCS_SPI_RW(0x00); 	    
-	base->W25QCS_SPI_RW(0x00); 	
-	Temp|=base->W25QCS_SPI_RW(0x00);
-	Temp= Temp<<8;
-	Temp|=base->W25QCS_SPI_RW(0x00);	 
-	base->W25QCS_CS_H();				    
-	return Temp;
-}
+// uint16_t W25QCSXX_ReadID(W25QCS_BASE * base)
+// {
+// 	uint16_t Temp = 0;	  
+// 	base->W25QCS_CS_L_enable();	
+// 	for(Temp = 0;Temp<1000;Temp++){}		
+// 	base->W25QCS_SPI_RW(0x90);   
+// 	base->W25QCS_SPI_RW(0x00); 	    
+// 	base->W25QCS_SPI_RW(0x00); 	    
+// 	base->W25QCS_SPI_RW(0x00); 	
+	
+// 	Temp|=base->W25QCS_SPI_RW(0x00);Temp= Temp<<8;
+
+// 	Temp|=base->W25QCS_SPI_RW(0x00);	 
+// 	base->W25QCS_CS_H();				    
+// 	return Temp;
+// }
 void W25QCSXX_ReadUniquidID(W25QCS_BASE * base,uint8_t *ptr,uint8_t len){
 	uint8_t i = 0;
 	base->W25QCS_CS_H();
 	//W25QCS_DELAYUS_U8(10);
 	base->W25QCS_CS_L_enable();
 	base->W25QCS_SPI_RW(0x9F);
-	// 4个dummy
-	for(i = 0;i < 4;i++){
-		base->W25QCS_SPI_RW(0);
-	}
-	for(i = 0;((i<4)&&(i<len));i++){
-		*(ptr+i) = base->W25QCS_SPI_RW(0);
+	if(W25Q == base->dev_type){
+		for(i = 0;((i<3)&&(i<len));i++){
+			*(ptr+i) = base->W25QCS_SPI_RW(0);
+		}
+
+	}else if(MX25 == base->dev_type){
+		// 4个dummy
+		for(i = 0;i < 4;i++){
+			base->W25QCS_SPI_RW(0);
+		}
+		for(i = 0;((i<4)&&(i<len));i++){
+			*(ptr+i) = base->W25QCS_SPI_RW(0);
+		}		
 	}
 	//W25QCS_DELAYUS_U8(10);
 	base->W25QCS_CS_H();
@@ -145,27 +150,24 @@ void W25QCSXX_Read(W25QCS_BASE * base,uint32_t ReadAddr,uint8_t* pBuffer,uint16_
 *	返 回 值: 
 *   说    明: 
 *********************************************************************************************************/
-uint8_t W25QCS_Write(W25QCS_BASE * base,uint32_t addr,uint8_t* ptr,uint16_t len){
+void W25QCS_Write(W25QCS_BASE * base,uint32_t addr,uint8_t* ptr,uint16_t len){
 	
 	uint8_t i = 0;
-	uint8_t page_num = len>>8;
-	uint8_t relase_num = len&0x00ff;
-	// TST_Print_EX("addr %xptr %xlen %d\n",addr,ptr,len);
-	if(len>256){
+	uint8_t page_num = (uint8_t)((float)len / 256.0);
+	uint8_t relase_num = 0;
+	if(page_num > 0){
+		relase_num = len - 256*page_num;
 		for(i = 0;i<page_num;i++){//16
-			W25QCSXX_Write_Page(base,(uint8_t *)(ptr+i*256),addr+i*256,256);
+			W25QCSXX_Write_Page(base,addr+i*256,(uint8_t *)&(ptr[i*256]),256);
 		}
 		if(0 != relase_num){
-			W25QCSXX_Write_Page(base,(uint8_t *)(ptr+i*256),addr+i*256,relase_num);		
-		}
-		
-	}
-	else{
-		W25QCSXX_Write_Page(base,ptr,addr,len);
+			W25QCSXX_Write_Page(base,addr+i*256,(uint8_t *)&(ptr[i*256]),relase_num);		
+		}	
+	}else{
+		W25QCSXX_Write_Page(base,addr,ptr,len);
 	}
 }  
-static uint32_t W25QCSXX_Write_Page(W25QCS_BASE * base,uint8_t* pBuffer,uint32_t WriteAddr,uint16_t NumByteToWrite)
-{//test ok
+static uint32_t W25QCSXX_Write_Page(W25QCS_BASE * base,uint32_t WriteAddr,uint8_t* pBuffer,uint16_t NumByteToWrite){
  	uint16_t i;  
     W25QCSXX_Write_Enable(base);                  
 	base->W25QCS_CS_L_enable();                            
@@ -180,17 +182,15 @@ static uint32_t W25QCSXX_Write_Page(W25QCS_BASE * base,uint8_t* pBuffer,uint32_t
 
 	return W25QCSXX_Wait_Busy(base,0);
 } 
-static void W25QCSXX_Write_NoCheck(W25QCS_BASE * base,uint8_t* pBuffer,uint32_t WriteAddr,uint16_t NumByteToWrite)   
-{ 			 		 
+void W25QCSXX_Write_NoCheck(W25QCS_BASE * base,uint32_t WriteAddr,uint8_t* pBuffer,uint16_t NumByteToWrite){ 			 		 
 	uint16_t pageremain;	   
 	pageremain=256-WriteAddr%256; 	 	    
 	if(NumByteToWrite<=pageremain)pageremain=NumByteToWrite;
 	while(1)
 	{	   
-		W25QCSXX_Write_Page(base,pBuffer,WriteAddr,pageremain);
+		W25QCSXX_Write_Page(base,WriteAddr,pBuffer,pageremain);
 		if(NumByteToWrite==pageremain)break;
-	 	else 
-		{
+	 	else{
 			pBuffer += pageremain;
 			WriteAddr += pageremain;	
 			NumByteToWrite-=pageremain;			 
@@ -206,8 +206,17 @@ void W25QCSXX_Erase_Chip(W25QCS_BASE * base)   {
     base->W25QCS_SPI_RW(W25X_ChipErase);      
 	base->W25QCS_CS_H();                                
 	W25QCSXX_Wait_Busy(base,100);//
-}  
-uint8_t W25QCSXX_Erase_Sector(W25QCS_BASE * base,uint32_t Dst_Addr)   {  
+}
+
+// 1：擦除成功
+// -1：擦除失败
+// 由 Sector的序号来擦除flash
+int8_t W25QCSXXEraseSectorByIndex(W25QCS_BASE * base,uint16_t SectorIndex){
+	return W25QCSXX_Erase_Sector(base,SectorIndex*4096);
+}
+// 1：擦除成功
+// -1：擦除失败
+int8_t W25QCSXX_Erase_Sector(W25QCS_BASE * base,uint32_t Dst_Addr){  
 	uint8_t buf = 0;
     W25QCSXX_Write_Enable(base);//解除擦除编程锁
     base->W25QCS_CS_H();
@@ -228,9 +237,9 @@ uint8_t W25QCSXX_Erase_Sector(W25QCS_BASE * base,uint32_t Dst_Addr)   {
    	base->W25QCS_CS_H();                                
     W25QCSXX_Wait_Busy(base,2);//擦除结束
 
-    W25QCSXX_Read(base,&buf,Dst_Addr,1);
-    if(0xff == buf)return 0;
-    else return 1;
+    W25QCSXX_Read(base,Dst_Addr,&buf,1);
+    if(0xff == buf)return 1;
+    return -1;
 }  
 //擦除一块大概需要0.1s
 static uint32_t W25QCSXX_Wait_Busy(W25QCS_BASE * base,uint32_t ms){   

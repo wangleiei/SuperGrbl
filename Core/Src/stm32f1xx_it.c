@@ -23,6 +23,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "interface.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -207,7 +208,13 @@ void SysTick_Handler(void)
 void TIM1_UP_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_UP_IRQn 0 */
-
+  if(__HAL_TIM_GET_FLAG(&htim1,TIM_FLAG_UPDATE)){
+    __HAL_TIM_CLEAR_FLAG(&htim1,TIM_FLAG_UPDATE);
+    GrblTimeInter(&GrblLaser);
+  }
+  
+  
+  return;
   /* USER CODE END TIM1_UP_IRQn 0 */
   HAL_TIM_IRQHandler(&htim1);
   /* USER CODE BEGIN TIM1_UP_IRQn 1 */
@@ -221,6 +228,11 @@ void TIM1_UP_IRQHandler(void)
 void TIM1_CC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_CC_IRQn 0 */
+  if(__HAL_TIM_GET_FLAG(&htim1,TIM_FLAG_CC1)){
+    __HAL_TIM_CLEAR_FLAG(&htim1,TIM_FLAG_CC1);
+    GrblTimeInterComp(&GrblLaser);
+  }
+  return;
 
   /* USER CODE END TIM1_CC_IRQn 0 */
   HAL_TIM_IRQHandler(&htim1);
@@ -250,17 +262,21 @@ void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
   if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_RXNE)){
+    PcMsgBufFinishFlag = 0;
     PcMsgBuf[PcMsgBufIndex++] = huart1.Instance->DR;
+
     if(PcMsgBufIndex >= sizeof(PcMsgBuf)){
       PcMsgBufIndex = 0;
     }
     __HAL_UART_CLEAR_FLAG(&huart1, UART_FLAG_RXNE);
   }
   else if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE)){
+    static uint8_t i = 0;
     __HAL_UART_CLEAR_FLAG(&huart1, UART_FLAG_IDLE);
+    i =huart1.Instance->DR;
     PcMsgBufFinishFlag = 1;
   }
-  
+  return;
   /* USER CODE END USART1_IRQn 0 */
   HAL_UART_IRQHandler(&huart1);
   /* USER CODE BEGIN USART1_IRQn 1 */

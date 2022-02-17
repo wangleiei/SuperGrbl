@@ -1,14 +1,39 @@
 #include "mainserver.h"
+static int8_t ReadCmd(uint8_t*buf,uint8_t maxlen);
+static void SetGcodeParm(uint32_t GFileLen);
+static void GetGcodeParm(GCODE_FILE_PAR *GcodeFilePar);
+static int8_t ReadNoMissingData(uint8_t*buffer,uint8_t len);
+static int8_t SaveNoMissingData(uint8_t*buffer,uint8_t len);
+
+void ResetGfileAddr(void);
+void SaveGfile(uint8_t*buffer,uint16_t len);
+static GCODE_FILE_PAR GcodeFilePar;
+static uint8_t CanReadGcodeFileFlag = 0;
+static uint8_t GcodeParm[30] = {0};
+static uint8_t GcodeParmLen = 0;
+static uint32_t GcodeFileFlagIndex = 0;
+// 1:²Á³ý³É¹¦
+// -1:²Á³ýÊ§°Ü
+int8_t CleanGfile(void);
 void UsartDeal(void);
+void FlashCheck(void);
 
 void DataInit(void){
-	
+	uint8_t read_buf[30] = {0};
+	W25Q_Init(&W25q64Dev,
+		FlashCsL,
+		FlashCsH,
+		// spiÊ±ÐòÒªÇó£¬Ê±ÖÓÆ½Ê±ÊÇµÍ£¬ÉÏÉýÑØ²¶»ñ£¬¸ßÎ»ÔÚÇ°£¬8×Ö½ÚÊý¾Ý³¤¶È,
+		W25QCS_SPI_RW,
+		HAL_Delay,
+		8,
+		W25Q);
 	GrblInit(&GrblLaser,
-		// ä»Žä¸²å£å¾—åˆ°æ•°æ®åŒ…,ä¸€èˆ¬æ¥è¯´Gcodeå’Œé…ç½®codeéƒ½æ˜¯ä¸€è¡Œå­—ç¬¦ï¼Œæ‰€ä»¥ä¸€ä¸ªæ•°æ®åŒ…æ˜¯ä»¥\r\nç»“æŸ
-		// æ•°æ®æŒ‡é’ˆæŒ‡å‘æŽ¥å—ç¼“å­˜ï¼Œå½“å¾—åˆ°æ•°æ®ä¹‹åŽï¼Œå¤åˆ¶æ•°æ®åˆ°è¿™ä¸ªç¼“å­˜åŒºåŸŸ
-		// maxlenä»£è¡¨çš„æ˜¯ç¼“å†²åŒºé•¿åº¦
-		// è¿”å›ž-1:æ²¡æœ‰æ•°æ®
-		// è¿”å›ž>0:å¤åˆ¶ä¹‹åŽçš„æ•°æ®é•¿åº¦ï¼ˆå¯èƒ½å®žé™…æ•°æ®é•¿åº¦æ¯”maxlenå¤§ï¼Œä½†æ˜¯è¿”å›žmaxlenï¼‰
+		// ´Ó´®¿ÚµÃµ½Êý¾Ý°ü,Ò»°ãÀ´ËµGcodeºÍÅäÖÃcode¶¼ÊÇÒ»ÐÐ×Ö·û£¬ËùÒÔÒ»¸öÊý¾Ý°üÊÇÒÔ\r\n½áÊø
+		// Êý¾ÝÖ¸ÕëÖ¸Ïò½ÓÊÜ»º´æ£¬µ±µÃµ½Êý¾ÝÖ®ºó£¬¸´ÖÆÊý¾Ýµ½Õâ¸ö»º´æÇøÓò
+		// maxlen´ú±íµÄÊÇ»º³åÇø³¤¶È
+		// ·µ»Ø-1:Ã»ÓÐÊý¾Ý
+		// ·µ»Ø>0:¸´ÖÆÖ®ºóµÄÊý¾Ý³¤¶È£¨¿ÉÄÜÊµ¼ÊÊý¾Ý³¤¶È±Èmaxlen´ó£¬µ«ÊÇ·µ»Ømaxlen£©
 		ReadCmd,
 		XAxisPwmL,
 		XAxisPwmH,
@@ -25,70 +50,333 @@ void DataInit(void){
 		DisableTimeInter,
 		EnableTimeInter,
 		SetTimeInterMs,
-		// å¯¹äºŽioå£éœ€è¦è¾“å‡ºé«˜ç”µå¹³ä¹‹åŽå†æ‹‰ä½Žï¼Œè¿™ä¸ªæ—¶é—´åº”è¯¥äº¤ç»™æ¯”è¾ƒæ•èŽ·ä¸­æ–­åšï¼Œå°±æ˜¯æº¢å‡ºä¸­æ–­å‘ç”Ÿä¹‹åŽï¼Œåœ¨xä¸ªè®¡æ•°å‘¨æœŸä¹‹åŽå‘ç”Ÿæº¢å‡ºä¸­æ–­
+		// ¶ÔÓÚio¿ÚÐèÒªÊä³ö¸ßµçÆ½Ö®ºóÔÙÀ­µÍ£¬Õâ¸öÊ±¼äÓ¦¸Ã½»¸ø±È½Ï²¶»ñÖÐ¶Ï×ö£¬¾ÍÊÇÒç³öÖÐ¶Ï·¢ÉúÖ®ºó£¬ÔÚx¸ö¼ÆÊýÖÜÆÚÖ®ºó·¢ÉúÒç³öÖÐ¶Ï
 		SetTimeCompInterUs,
-		// æ‰“å°æ—¥å¿—ä½¿ç”¨
+		// ´òÓ¡ÈÕÖ¾Ê¹ÓÃ
 		printPgmString,
 		ReadNoMissingData,
 		SaveNoMissingData,
-		// é™ä½å¼€å…³å‡½æ•°
-		// 1ï¼šè§¦ç¢°åˆ°è¡Œç¨‹å¼€å…³
-		// 0ï¼šæ²¡æœ‰è§¦ç¢°åˆ°è¡Œç¨‹å¼€å…³
+		// ÏÞÎ»¿ª¹Øº¯Êý
+		// 1£º´¥Åöµ½ÐÐ³Ì¿ª¹Ø
+		// 0£ºÃ»ÓÐ´¥Åöµ½ÐÐ³Ì¿ª¹Ø
 		IsTouchX,
 		IsTouchY,
 		IsTouchZ,
-		// ä¸»è½´é›•åˆ»ä½¿ç”¨
+		// Ö÷Öáµñ¿ÌÊ¹ÓÃ
 		spindle_run,
-		spindle_stop);
-	W25Q_Init(&W25q64Dev,
-		nap,
-		nap,
-		// spiæ—¶åºè¦æ±‚ï¼Œæ—¶é’Ÿå¹³æ—¶æ˜¯ä½Žï¼Œä¸Šå‡æ²¿æ•èŽ·ï¼Œé«˜ä½åœ¨å‰ï¼Œ8å­—èŠ‚æ•°æ®é•¿åº¦,
-		W25QCS_SPI_RW,
-		HAL_Delay,
-		8,
-		W25Q);
-	
+		spindle_stop,
+		LaserControl,
+		0);
+	GetGcodeParm(&GcodeFilePar);
+
+	sprintf(read_buf,"gcodeÎÄ¼þ´óÐ¡ %d\r\n",GcodeFilePar.GFileLen);
+	printPgmString(read_buf);
+
+	// FlashCheck();
+	#ifdef DEBUG_PWM
+		LaserControl(50);
+		AirPushControl(80);
+	#endif
 }
 void MainServer(void){
 	UsartDeal();
 	SpProcess(&GrblLaser);
 }
+// ´¦ÀíÀ´×ÅPC´®¿ÚµÄÊý¾Ý
 void UsartDeal(void){
-	// 0ï¼šè¿˜æ²¡æœ‰æŽ¥å—Gcodeä»£ç 
-	// 1ï¼šå‡†å¤‡æŽ¥å—Gcodeä»£ç 
-	// 2ï¼šå¯åŠ¨æµ‹é‡
-	// 3ï¼šgrblå‚æ•°è®¾ç½®ï¼Œä¸²å£å‘é€çš„å‘½ä»¤ç›´æŽ¥ç”±grblæ¨¡å—å¤„ç†
+	static uint32_t gfile_len = 0;
+	static uint8_t ErrSaveFlag = 0;
+	uint8_t read_buf[50] = {0};
+	uint8_t serial_len = 0;
+	// 0£º»¹Ã»ÓÐ½ÓÊÜGcode´úÂë
+	// 1£º×¼±¸½ÓÊÜGcode´úÂë
+	// 2£ºÆô¶¯²âÁ¿
+	// 3£ºgrbl²ÎÊýÉèÖÃ£¬´®¿Ú·¢ËÍµÄÃüÁîÖ±½ÓÓÉgrblÄ£¿é´¦Àí
 	static uint8_t data_flag = 0;
-
+	uint32_t i = 0;
 	if(PcMsgBufFinishFlag == 1){
+		serial_len = PcMsgBufIndex;
 		if(data_flag == 0){
-			if(strstr((uint8_t*)PcMsgBufIndex,"ready to rec gcode") != 0){
-				data_flag = 1;
-			}else if(strstr((uint8_t*)PcMsgBufIndex,"start grbl") != 0){
-				data_flag = 2;
-			}else if(strstr((uint8_t*)PcMsgBufIndex,"set grbl parm") != 0){
-				data_flag = 3;
-			}
-		}else if(data_flag == 1){
-			if(strstr((uint8_t*)PcMsgBufIndex,"gcode trans over") != 0){
-				data_flag = 0;
-			}else{
-				static uint32_t w_index = 4096;
-				W25QCS_Write(&W25q64Dev,w_index,PcMsgBuf,PcMsgBufIndex);
-				w_index += PcMsgBufIndex;
-
-				if((w_index > (4096+20)) && (strstr((uint8_t*)PcMsgBufIndex,"%\r\n") != 0)){
-					w_index = 0;
+			if(strstr((uint8_t*)PcMsgBuf,"ready to rec gcode") != 0){
+				printPgmString("¿ªÊ¼²Á³ýFlash\r\n");
+				if(CleanGfile() == 1){
+					
 				}
 
+				data_flag = 1;
+				ResetGfileAddr();
+				printPgmString("×¼±¸½ÓÊÜG´úÂë\r\n");	
+			}else if(strstr((uint8_t*)PcMsgBuf,"start grbl") != 0){
+				printPgmString("Æô¶¯GRBLÔËÐÐ\r\n");
+				GrblStart(&GrblLaser);
+				data_flag = 2;
+				CanReadGcodeFileFlag = 1;
+			}else if(strstr((uint8_t*)PcMsgBuf,"set grbl parm") != 0){
+				printPgmString("¿ªÊ¼ÉèÖÃGRBL²ÎÊý\r\n");
+				data_flag = 3;
+				CanReadGcodeFileFlag = 2;
+			}
+		}else if(data_flag == 1){
+			// ÔÚg´úÂë½ÓÊÜ¹ý³ÌÖÐ
+			if(strstr((uint8_t*)PcMsgBuf,"gcode trans over") != 0){
+				uint8_t temp_buf[40] = {0};
+				printPgmString("G´úÂë½ÓÊÜ½áÊø\r\n");
+				SetGcodeParm(gfile_len);
+				gfile_len = 0;
+				ResetGfileAddr();
+				
+				if(1 == ErrSaveFlag){
+					printPgmString("G´úÂë½ÓÊÜÊ§°Ü\r\n");
+				}else{
+					printPgmString("G´úÂë½ÓÊÜ³É¹¦£¬Ã»ÓÐ´íÎó\r\n");
+				}
+				ErrSaveFlag = 0;
+				data_flag = 0;
+
+				memset(temp_buf,0,sizeof(temp_buf));
+				sprintf(temp_buf,"G´úÂë´óÐ¡%d\r\n",GcodeFilePar.GFileLen);
+				printPgmString(temp_buf);
+			}else{
+				// ½ÓÊÜG´úÂë
+				SaveGfile(PcMsgBuf,serial_len);
+				// W25QCSXX_Read(&W25q64Dev,w_index + GCODE_FILE_INDEX,read_buf,serial_len);
+				// for(i = 0;i < serial_len;i ++){
+				// 	if(read_buf[i] != PcMsgBuf[i]){
+				// 		PrintLog(read_buf,serial_len);
+
+				// 		memset(read_buf,0,sizeof(read_buf));
+				// 		sprintf(read_buf,"G´úÂëÎÞ·¨´æ´¢-µØÖ·%x\r\n",w_index+GCODE_FILE_INDEX);
+				// 		printPgmString(read_buf);
+				// 		ErrSaveFlag = 1;
+				// 		break;
+				// 	}
+				// }
+				// PrintLog(uint8_t*buf,uint8_t len){
+				gfile_len += serial_len;
+				
 			}
 		}else if(data_flag == 2){
-			
+			// ÔÚÆô¶¯ÔËÐÐÖÐ,½«g´úÂë´ÓflashÖÐ¶ÁÈ¡È»ºó·¢ËÍµ½grblÄ£¿é
+			if(strstr((uint8_t*)PcMsgBuf,"pause grbl") != 0){
+				printPgmString("GRBLÔÝÍ£ÔËÐÐ\r\n");
+				GrblPause(&GrblLaser);
+				CanReadGcodeFileFlag = 0;
+			}else if(strstr((uint8_t*)PcMsgBuf,"resume grbl") != 0){
+				printPgmString("GRBL»Ö¸´ÔËÐÐ\r\n");
+				GrblResume(&GrblLaser);
+				CanReadGcodeFileFlag = 1;
+			}else if(strstr((uint8_t*)PcMsgBuf,"stop grbl") != 0){
+				printPgmString("ÊÕµ½GRBLÍ£Ö¹ÔËÐÐÖ¸Áî\r\n");
+				GrblStop(&GrblLaser);
+				CanReadGcodeFileFlag = 0;
+				GcodeFileFlagIndex = 0;
+				data_flag = 0;
+			}
+		}else if(data_flag == 3){//´¦ÓÚ½ÓÊÜg´úÂë²ÎÊýµÄ×´Ì¬
+			if(strstr((uint8_t*)PcMsgBuf,"exit grbl parm") != 0){
+				printPgmString("ÍË³öÉèÖÃGRBL²ÎÊý\r\n");
+				data_flag = 0;
+			}
+			memset(GcodeParm,0,sizeof(GcodeParm));
+			memcpy(GcodeParm,PcMsgBuf,serial_len);
+			GcodeParmLen = serial_len;
 		}
-
-		PcMsgBufIndex = 0;
+		if(data_flag != 1){//ÎªÁË²»¸ÉÈÅ½ô´ÕµÄg´úÂë´«Êä¹ý³Ì
+			if(strstr((uint8_t*)PcMsgBuf,"check gcode") != 0){
+				uint32_t read_file_index = 0;
+				uint16_t cunrrent_data_len = 0;
+				while(GcodeFilePar.GFileLen > read_file_index){
+					if((GcodeFilePar.GFileLen - read_file_index) > sizeof(read_buf)){
+						cunrrent_data_len = sizeof(read_buf);
+					}else{
+						cunrrent_data_len = GcodeFilePar.GFileLen - read_file_index;
+					}
+					W25QCSXX_Read(&W25q64Dev,GCODE_FILE_INDEX+read_file_index,read_buf,cunrrent_data_len);
+					PrintLog(read_buf,cunrrent_data_len);
+					read_file_index += cunrrent_data_len;
+				};
+				
+			}else if(strstr((uint8_t*)PcMsgBuf,"check grbl par") != 0){
+				GrblPrintSettings(&GrblLaser);
+			}
+		}
 		PcMsgBufFinishFlag = 0;
-		memset(PcMsgBuf,0,sizeof(PcMsgBuf));
+		memset(PcMsgBuf,0,PcMsgBufIndex);
+		// PcMsgBuf[PcMsgBufIndex] = 0;
+		PcMsgBufIndex = 0;
 	}
+}
+
+// ´Ó´®¿ÚµÃµ½Êý¾Ý°ü,Ò»°ãÀ´ËµGcodeºÍÅäÖÃcode¶¼ÊÇÒ»ÐÐ×Ö·û£¬ËùÒÔÒ»¸öÊý¾Ý°üÊÇÒÔ\r\n½áÊø
+// Êý¾ÝÖ¸ÕëÖ¸Ïò½ÓÊÜ»º´æ£¬µ±µÃµ½Êý¾ÝÖ®ºó£¬¸´ÖÆÊý¾Ýµ½Õâ¸ö»º´æÇøÓò
+// maxlen´ú±íµÄÊÇ»º³åÇø³¤¶È
+// ·µ»Ø-1:Ã»ÓÐÊý¾Ý
+// ·µ»Ø>0:¸´ÖÆÖ®ºóµÄÊý¾Ý³¤¶È£¨¿ÉÄÜÊµ¼ÊÊý¾Ý³¤¶È±Èmaxlen´ó£¬µ«ÊÇ·µ»Ømaxlen£©
+static int8_t ReadCmd(uint8_t*buf,uint8_t maxlen){
+	
+	uint8_t buf_line[50] = {0};
+	//uint8_t nr_index = 0;
+	uint8_t i = 0;
+	uint8_t g_len = 0;
+	if(CanReadGcodeFileFlag == 1){
+		if(GcodeFileFlagIndex >= GcodeFilePar.GFileLen){
+			return -1;
+		}
+		W25QCSXX_Read(&W25q64Dev,GcodeFileFlagIndex + GCODE_FILE_INDEX,buf_line,sizeof(buf_line));
+		for(i = 0;i < (sizeof(buf_line) - 1);i ++){
+			// if((buf_line[i] == '\r') && (buf_line[i+1] == '\n')){
+			if((buf_line[i] == '\n')){
+				// Õý³£Êý¾Ý½ÓÊÜ
+				g_len = i;
+				if(g_len > maxlen){
+					GcodeFileFlagIndex = maxlen + GcodeFileFlagIndex;
+					g_len = maxlen;
+				}else{
+					GcodeFileFlagIndex = i + GcodeFileFlagIndex + 2;//+2ÊÇÎªÁËÌø¹ý"\r\n"
+				}		
+				break;
+			}
+		}
+		if(i == (sizeof(buf_line) - 1)){
+			uint8_t tr_buf[30] = {0};
+			sprintf(tr_buf,"³öÏÖ¶ÁgcodeÐÐ³¬¹ý»º´æ\r\n");//g´úÂëÃ»ÓÐÕýÈ·½áÎ²,»òÕßg´úÂëÖÐÒ»ÐÐÊý¾ÝÌ«¶à
+			printPgmString(tr_buf);
+			GcodeFileFlagIndex += i;
+			return -1;
+		}
+		memcpy(buf,buf_line,g_len);
+		return g_len;
+	}else if(CanReadGcodeFileFlag == 0){
+		return -1;
+	}else if(2 == CanReadGcodeFileFlag){
+		if(GcodeParmLen == 0){
+			return -1;
+		}
+		g_len = GcodeParmLen > maxlen?maxlen:GcodeParmLen;
+		memcpy(buf,GcodeParm,g_len);
+		GcodeParmLen = 0;
+		return g_len;
+	}
+	return -1;
+}
+static void SetGcodeParm(uint32_t GFileLen){
+	GCODE_FILE_PAR GcodeFilePar_;
+	GcodeFilePar_.GFileLen = GFileLen;
+	return;
+	if(W25QCSXX_Erase_Sector(&W25q64Dev,GCODE_FILE_CONFIG) == -1){
+		printPgmString("´æ´¢Gfile²ÎÊýÊ§°Ü-ÎÞ·¨²Á³ý\r\n");
+		return;
+	}
+	W25QCS_Write(&W25q64Dev,GCODE_FILE_CONFIG,(uint8_t*)&GcodeFilePar_,sizeof(GcodeFilePar_));
+	GcodeFilePar_.GFileLen = 0;
+	W25QCSXX_Read(&W25q64Dev,GCODE_FILE_CONFIG,(uint8_t*)&GcodeFilePar_,sizeof(GcodeFilePar_));
+	if(GFileLen != GcodeFilePar_.GFileLen){
+		printPgmString("´æ´¢Gfile²ÎÊýÊ§°Ü-Ð£Ñé´íÎó\r\n");
+		return;
+	}
+	GcodeFilePar.GFileLen = GFileLen;
+}
+static void GetGcodeParm(GCODE_FILE_PAR *GcodeFilePar_){
+	W25QCSXX_Read(&W25q64Dev,GCODE_FILE_CONFIG,(uint8_t*)GcodeFilePar_,sizeof(GcodeFilePar_));
+}
+
+// ÓÃÓÚ»ñÈ¡ÓÀ¾Ã´æ´¢Êý¾ÝµÄº¯Êý,GRBLÓÃÀ´´æ´¢Ò»Ð©ÉèÖÃ²ÎÊý,±ØÐë´æ·Ålen¸ö×Ö½Ú
+// -1£º»ñÈ¡Ê§°Ü
+// 0:»ñÈ¡³É¹¦
+static int8_t ReadNoMissingData(uint8_t*buffer,uint8_t len){
+	uint8_t checkbuf[1] = {0};
+	W25QCSXX_Read(&W25q64Dev,GRBL_PAR_ADDR,buffer,len);
+	W25QCSXX_Read(&W25q64Dev,len,checkbuf,1);
+	if(checkbuf[0] == 0x2d){
+		return 0;
+	}
+	return -1;
+}
+// ´æ·ÅÓÀ¾Ã´æ´¢Êý¾Ý£¬
+// -1£º´æ·ÅÊ§°Ü
+// 0:´æ·Å³É¹¦
+static int8_t SaveNoMissingData(uint8_t*buffer,uint8_t len){
+	uint8_t checkbuf[1] = {0x2d};
+	if(W25QCSXX_Erase_Sector(&W25q64Dev,GRBL_PAR_ADDR) == -1){
+		return -1;
+	}
+
+	W25QCS_Write(&W25q64Dev,GRBL_PAR_ADDR,buffer,len);
+	W25QCS_Write(&W25q64Dev,len,checkbuf,1);
+
+	checkbuf[0] = 0;
+	W25QCSXX_Read(&W25q64Dev,len,checkbuf,1);
+
+	if(checkbuf[0] == 0x2d){
+		return 0;
+	}
+	return -1;
+}
+void FlashCheck(void){
+	uint16_t i = 0,k = 0,j = 0;
+	if(W25QCSXX_Erase_Sector(&W25q64Dev,GCODE_FILE_INDEX) == -1){
+		printPgmString("ÎÞ·¨²Á³ý\r\n");
+	}
+	for(j = 0;j < 32;j++){
+		uint8_t sumff[128] = {0};
+		W25QCSXX_Read(&W25q64Dev,GCODE_FILE_INDEX + i*sizeof(sumff),sumff,sizeof(sumff));
+		for(k  = 0;k  < sizeof(sumff);k  ++){
+			if(sumff[k] != 0xff){
+				printPgmString("ÎÞ·¨²Á³ý\r\n");
+				return;
+			}
+		}
+	}
+	for(j = 0;j < 32;j++){
+		uint8_t sumff[128] = {0};
+		memset(sumff,0x12,sizeof(sumff));
+		W25QCS_Write(&W25q64Dev,GCODE_FILE_INDEX + i*sizeof(sumff),sumff,sizeof(sumff));
+		memset(sumff,0,sizeof(sumff));
+		W25QCSXX_Read(&W25q64Dev,GCODE_FILE_INDEX + i*sizeof(sumff),sumff,sizeof(sumff));
+		for(k  = 0;k  < sizeof(sumff);k  ++){
+			if(sumff[k] != 0x12){
+				printPgmString("²Á³ýÒÔºó²»ÄÜÐ´Èë\r\n");
+				return;
+			}
+		}
+	}
+	printPgmString("FLASH¿ÉÊ¹ÓÃ\r\n");
+
+}
+// 1:²Á³ý³É¹¦
+// -1:²Á³ýÊ§°Ü
+int8_t CleanGfile(void){
+	uint8_t read_buf[50] = {0};
+	uint16_t i = 0,j = 0;
+	uint32_t sectortotal = 0;
+	sectortotal = W25Q_GetSectorNum(&W25q64Dev);
+	// Ï£ÍûÄÜÌá¹©1MBµÄ¿Õ¼äÓÃÓÚ´æ·ÅÒ»¸öG´úÂë,ËùÒÔÓÐ1024kB/4kB
+	sectortotal = sectortotal > (1024/4)?(1024/4):sectortotal;
+	for(i = GCODE_FILE_INDEX / 4096;i < sectortotal;i ++){
+		if(W25QCSXXEraseSectorByIndex(&W25q64Dev,i) == -1){
+			sprintf(read_buf,"²Á³ýµÚ %d setorÊ§°Ü\r\n",i);
+			printPgmString(read_buf);
+			return -1;
+		}else if(i%50 == 0){
+			sprintf(read_buf,"ÕýÔÚ²Á³ýµÚ %d setorµÄÊý¾Ý£¬Ò»¹²¿É´æ·Å%dKBÊý¾Ý\r\n",i,i*4);
+			printPgmString(read_buf);
+		}
+	}
+	printPgmString("Flash²Á³ý³É¹¦\r\n");
+	return 1;
+}
+static uint32_t w_index = 0;
+void ResetGfileAddr(void){
+	w_index = 0;
+}
+void SaveGfile(uint8_t*buffer,uint16_t len){
+	uint8_t i = 0;
+	uint8_t sum[1] = {0};
+	W25QCSXX_Write_NoCheck(&W25q64Dev,GCODE_FILE_INDEX + w_index,buffer,len);
+	// W25QCS_Write(&W25q64Dev,GCODE_FILE_INDEX + w_index,buffer,len);
+	W25QCSXX_Read(&W25q64Dev,GCODE_FILE_INDEX + w_index + len - 1,sum,1);
+	if(sum[0] != buffer[len-1]){
+		printPgmString("Êý¾Ý´æ·ÅÊ§°Ü\r\n");
+	}
+	w_index += len;
 }

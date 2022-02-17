@@ -39,16 +39,26 @@ void W25Q_Init(W25QCS_BASE * base,
 // 0：测试通过
 uint8_t W25Q_Test(W25QCS_BASE * base); //用于测试 SPI FLASH 
 void W25QCSXX_Read(W25QCS_BASE * base,uint32_t ReadAddr,uint8_t* pBuffer,uint16_t len); //这可以读出整个flash的内容
-uint8_t W25QCS_Write(W25QCS_BASE * base,uint32_t addr,uint8_t* ptr,uint16_t len);//任意位置都可以写入
-uint8_t W25QCSXX_Erase_Sector(W25QCS_BASE * base,uint32_t Dst_Addr); 
+void W25QCS_Write(W25QCS_BASE * base,uint32_t addr,uint8_t* ptr,uint16_t len);//任意位置都可以写入
+
+// 1：擦除成功
+// -1：擦除失败
+// 擦除指定地址所在的sector的数据
+int8_t  W25QCSXX_Erase_Sector(W25QCS_BASE * base,uint32_t Dst_Addr); 
+
+// 1：擦除成功
+// -1：擦除失败
+// 由 Sector的序号来擦除flash
+int8_t W25QCSXXEraseSectorByIndex(W25QCS_BASE * base,uint16_t SectorIndex);
+
 void W25QCSXX_Erase_Chip(W25QCS_BASE * base);  
 
+// 低功耗下使用
 void W25QCSXX_PowerDown(W25QCS_BASE * base);  
 void W25QCSXX_WAKEUP(W25QCS_BASE * base);  
+void W25QCSXX_Write_NoCheck(W25QCS_BASE * base,uint32_t WriteAddr,uint8_t* pBuffer,uint16_t NumByteToWrite);
 void W25QCSXX_ReadUniquidID(W25QCS_BASE * base,uint8_t *ptr,uint8_t len);
-uint16_t W25QCSXX_ReadID(W25QCS_BASE * base);
-uint8_t W25QCSXX_ReadSR(W25QCS_BASE * base);  
-
+#define W25Q_GetSectorNum(base) ((base)->W25QCS_SIZE_MB*1024/4)//得到flash有多少区块
 
 #endif
 
